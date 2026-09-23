@@ -1,0 +1,100 @@
+@import "tailwindcss";
+@import "@fontsource/newsreader/latin-500.css";
+@import "@fontsource/newsreader/latin-600.css";
+@import "@fontsource/ibm-plex-sans/latin-400.css";
+@import "@fontsource/ibm-plex-sans/latin-500.css";
+@import "@fontsource/ibm-plex-sans/latin-600.css";
+
+@theme {
+  --color-bg: #f3efe6;
+  --color-surface: #fffcf7;
+  --color-ink: #1a1814;
+  --color-muted: #5c564c;
+  --color-line: #e3d9c8;
+  --color-accent: #0e6b56;
+  --color-accent-fg: #f3faf7;
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Newsreader", ui-serif, Georgia, serif;
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.5rem;
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    background: var(--color-bg);
+    color: var(--color-ink);
+    --motion-quick: 150ms;
+    --motion-fast: 250ms;
+    --ease-smooth-out: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  body {
+    font-family: var(--font-sans);
+    min-height: 100vh;
+    line-height: 1.5;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+  ::selection {
+    background: var(--color-accent);
+    color: var(--color-accent-fg);
+  }
+  input[type="checkbox"] {
+    accent-color: var(--color-accent);
+  }
+}
+
+@keyframes boardline-scan {
+  from {
+    transform: translateX(-120%);
+  }
+  to {
+    transform: translateX(360%);
+  }
+}
+
+.boardline-scan {
+  animation: boardline-scan 1.15s ease-in-out infinite;
+}
+
+@keyframes bl-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.bl-bar {
+  transition: width var(--motion-fast) var(--ease-smooth-out);
+}
+
+.bl-skel {
+  animation: bl-pulse 1.4s linear infinite;
+  background: var(--color-line);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  button:active:not(:disabled) {
+    transform: scale(0.98);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .boardline-scan {
+    animation: none;
+    width: 100%;
+    transform: none;
+  }
+  .bl-bar,
+  .bl-skel {
+    animation: none;
+    transition: none;
+  }
+}
