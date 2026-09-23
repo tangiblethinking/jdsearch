@@ -13,7 +13,7 @@ export {
   uniqueWorkModes,
 } from "./job-filters";
 export { normalize, normalizeRss } from "./jobs-normalize";
-export { significantWords, matchesTitle, validateSearchInput } from "./jobs-query";
+export { significantWords, matchesTitle } from "./jobs-query";
 
 export const SOURCES = [
   "greenhouse",
@@ -138,4 +138,15 @@ export function parseCompanies(input: unknown): Company[] {
 
 export function companyKey(company: Company): string {
   return `${company.source}:${company.slug.toLowerCase()}`;
+}
+
+export function validateSearchInput(input: unknown): { query: string; companies: Company[] } {
+  if (!input || typeof input !== "object") throw new Error("Invalid search.");
+  const record = input as Record<string, unknown>;
+  if (typeof record.query !== "string") throw new Error("Enter a job title.");
+  const query = record.query.trim().slice(0, 120);
+  if (query.length < 2) throw new Error("Enter at least 2 characters.");
+  const companies = parseCompanies(record.companies).slice(0, 80);
+  if (companies.length === 0) throw new Error("Add at least one board.");
+  return { query, companies };
 }
