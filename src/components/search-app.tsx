@@ -1,85 +1,37 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { ArrowDown, ArrowUp, ChevronDown, ExternalLink, Plus, RotateCcw, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import { searchJobs } from "@/lib/jobs.functions";
 import {
   SOURCE_META,
   companyKey,
-  isSource,
+  emptyFilters,
+  filterJobs,
   normalizeSlug,
   parseCompanies,
   sortJobs,
-  sourceLabel,
   sourceRank,
+  uniqueCountries,
+  uniqueWorkModes,
   type BoardFailure,
   type Company,
   type Job,
+  type JobFilters,
   type SortKey,
   type Source,
 } from "@/lib/jobs";
-
-const STORE_KEY = "boardline-boards-v1";
-const CHUNK = 6;
-const RESULT_CAP = 400;
-const SUGGESTIONS = [
-  "Director of Product Design",
-  "Product Designer",
-  "Staff Product Designer",
-  "Design Manager",
-];
-
-type Board = Company & { builtin: boolean };
-type Phase = "idle" | "loading" | "done" | "error";
-
-const COLUMNS: { key: SortKey; label: string }[] = [
-  { key: "source", label: "Source" },
-  { key: "company", label: "Company" },
-  { key: "title", label: "Title" },
-  { key: "location", label: "Location" },
-  { key: "updated", label: "Updated" },
-];
-
-function loadStore(): { added: Company[]; disabled: string[] } {
-  try {
-    const raw = localStorage.getItem(STORE_KEY);
-    if (!raw) return { added: [], disabled: [] };
-    const parsed = JSON.parse(raw) as { added?: unknown; disabled?: unknown };
-    const disabled = Array.isArray(parsed.disabled)
-      ? parsed.disabled.filter((item): item is string => typeof item === "string").slice(0, 200)
-      : [];
-    return { added: parseCompanies(parsed.added), disabled };
-  } catch {
-    return { added: [], disabled: [] };
-  }
-}
-
-function readableError(err: unknown): string {
-  const raw = err instanceof Error ? err.message : "";
-  const clean = raw.replace(/^Error:\s*/, "").trim();
-  if (clean && clean.length < 140 && !/server function|unexpected|fetch failed/i.test(clean)) return clean;
-  return "The search stopped early. Anything already found is still listed.";
-}
-
-function formatUpdated(value: string): string {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  const now = new Date();
-  return new Intl.DateTimeFormat("en", {
-    month: "short",
-    day: "numeric",
-    ...(date.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }),
-  }).format(date);
-}
-
-function groupJobs(jobs: Job[]): { source: Source; jobs: Job[] }[] {
-  const groups: { source: Source; jobs: Job[] }[] = [];
-  for (const job of jobs) {
-    const last = groups.at(-1);
-    if (!last || last.source !== job.source) groups.push({ source: job.source, jobs: [job] });
-    else last.jobs.push(job);
-  }
-  return groups;
-}
+import { BoardsPanel } from "./search-boards";
+import { SearchResults } from "./search-results";
+import {
+  CHUNK,
+  RESULT_CAP,
+  STORE_KEY,
+  SUGGESTIONS,
+  groupJobs,
+  loadStore,
+  readableError,
+  type Board,
+  type Phase,
+} from "./search-shared";
 
 export function SearchApp({ query, onQuery }: { query: string; onQuery: (next: string) => void }) {
   const [draft, setDraft] = useState(query);
@@ -103,6 +55,7 @@ export function SearchApp({ query, onQuery }: { query: string; onQuery: (next: s
   const [showMisses, setShowMisses] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>("source");
   const [sortDir, setSortDir] = useState<1 | -1>(1);
+  const [filters, setFilters] = useState<JobFilters>(() => emptyFilters());
   const baseRef = useRef<Company[]>([]);
   const runId = useRef(0);
   const booted = useRef(false);
@@ -141,9 +94,7 @@ export function SearchApp({ query, onQuery }: { query: string; onQuery: (next: s
 
   useEffect(() => {
     if (!ready || !boards) return;
-    const added = boards
-      .filter((board) => !board.builtin)
-      .map(({ name, source, slug }) => ({ name, source, slug }));
+    const added = boards.filter((board) => !board.builtin).map(({ name, source, slug }) => ({ name, source, slug }));
     try {
       localStorage.setItem(STORE_KEY, JSON.stringify({ added, disabled: [...disabled] }));
     } catch {
@@ -183,6 +134,7 @@ export function SearchApp({ query, onQuery }: { query: string; onQuery: (next: s
     setShowMisses(false);
     setSortKey("source");
     setSortDir(1);
+    setFilters(emptyFilters());
     onQuery(q);
 
     const acc: Job[] = [];
@@ -216,9 +168,7 @@ export function SearchApp({ query, onQuery }: { query: string; onQuery: (next: s
     booted.current = true;
     const q = query.trim();
     if (q.length < 2) return;
-    const list = boards.filter((board) => !disabled.has(companyKey(board)));
-    void execute(q, list);
-    // Initial URL search only. Later edits go through the form.
+    void execute(q, boards.filter((board) => !disabled.has(companyKey(board))));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [boards, disabled]);
 
@@ -274,17 +224,11 @@ export function SearchApp({ query, onQuery }: { query: string; onQuery: (next: s
     setAddError("");
   }
 
-  function restoreBoards() {
-    setBoards(baseRef.current.map((company) => ({ ...company, builtin: true })));
-    setDisabled(new Set());
-    setAddError("");
-  }
-
-  const sorted = useMemo(() => sortJobs(jobs, sortKey, sortDir), [jobs, sortKey, sortDir]);
+  const filtered = useMemo(() => filterJobs(jobs, filters), [jobs, filters]);
+  const sorted = useMemo(() => sortJobs(filtered, sortKey, sortDir), [filtered, sortKey, sortDir]);
   const visible = sorted.slice(0, RESULT_CAP);
   const grouped = sortKey === "source";
   const groups = grouped ? groupJobs(visible) : [];
-  const sourceHint = SOURCE_META.find((item) => item.id === addSource)?.hint ?? "";
   const listed = [...(boards ?? [])].sort((a, b) => {
     const bySource = sourceRank(a.source) - sourceRank(b.source);
     return bySource !== 0 ? bySource : a.name.localeCompare(b.name);
@@ -294,23 +238,15 @@ export function SearchApp({ query, onQuery }: { query: string; onQuery: (next: s
     <main className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-8 sm:px-6 sm:py-10">
       <header className="flex flex-col gap-3">
         <p className="text-sm font-medium text-accent">Public job boards</p>
-        <h1 className="font-serif text-4xl leading-tight font-medium tracking-tight text-ink sm:text-5xl">
-          Boardline
-        </h1>
+        <h1 className="font-serif text-4xl leading-tight font-medium tracking-tight text-ink sm:text-5xl">Boardline</h1>
         <p className="max-w-xl text-base text-muted">
-          Search one title across company boards. Matches must include every word. Small words like of, the,
-          and a are ignored.
+          Search one title across company boards. Matches must include every word. Small words like of, the, and a are ignored.
         </p>
       </header>
 
-      <form
-        onSubmit={onSubmit}
-        className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4"
-      >
+      <form onSubmit={onSubmit} className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4">
         <div className="flex flex-col gap-2 sm:flex-row">
-          <label className="sr-only" htmlFor="q">
-            Job title
-          </label>
+          <label className="sr-only" htmlFor="q">Job title</label>
           <input
             id="q"
             value={draft}
@@ -320,10 +256,7 @@ export function SearchApp({ query, onQuery }: { query: string; onQuery: (next: s
             enterKeyHint="search"
             className="min-h-11 w-full rounded-sm border border-line bg-bg px-3 text-base text-ink placeholder:text-muted"
           />
-          <button
-            type="submit"
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-sm bg-accent px-4 text-sm font-medium text-accent-fg"
-          >
+          <button type="submit" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-sm bg-accent px-4 text-sm font-medium text-accent-fg">
             <Search className="size-4" aria-hidden="true" />
             {phase === "loading" ? "Searching" : "Search"}
           </button>
@@ -355,324 +288,58 @@ export function SearchApp({ query, onQuery }: { query: string; onQuery: (next: s
         </div>
       ) : null}
 
-      <section className="rounded-xl border border-line bg-surface">
-        <button
-          type="button"
-          aria-expanded={boardsOpen}
-          onClick={() => setBoardsOpen((open) => !open)}
-          className="flex min-h-11 w-full items-center justify-between gap-3 px-4 py-3 text-left"
-        >
-          <span>
-            <span className="block text-sm font-medium text-ink">Boards</span>
-            <span className="block text-sm text-muted">
-              Add a company from its careers URL. Built-in boards can be turned off, not deleted.
-            </span>
-          </span>
-          <ChevronDown
-            className={`size-4 shrink-0 text-muted motion-safe:transition-transform motion-safe:duration-200 ${boardsOpen ? "rotate-180" : ""}`}
-            aria-hidden="true"
-          />
-        </button>
-        {boardsOpen && boards ? (
-          <div className="flex flex-col gap-4 border-t border-line px-4 py-4">
-            <form onSubmit={onAdd} className="flex flex-col gap-2">
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <input
-                  value={addName}
-                  onChange={(event) => setAddName(event.target.value)}
-                  placeholder="Company"
-                  aria-label="Company name"
-                  className="min-h-11 w-full rounded-sm border border-line bg-bg px-3 text-sm sm:flex-1"
-                />
-                <select
-                  value={addSource}
-                  onChange={(event) => {
-                    if (isSource(event.target.value)) setAddSource(event.target.value);
-                  }}
-                  aria-label="Board source"
-                  className="min-h-11 rounded-sm border border-line bg-bg px-3 text-sm sm:w-40"
-                >
-                  {SOURCE_META.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.label}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  value={addSlug}
-                  onChange={(event) => setAddSlug(event.target.value)}
-                  placeholder="slug"
-                  aria-label="Board slug"
-                  className="min-h-11 w-full rounded-sm border border-line bg-bg px-3 text-sm sm:flex-1"
-                />
-                <button
-                  type="submit"
-                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-sm border border-line px-4 text-sm font-medium text-ink"
-                >
-                  <Plus className="size-4" aria-hidden="true" />
-                  Add
-                </button>
-              </div>
-              <p className="text-sm text-muted">{sourceHint}</p>
-              {addError ? <p className="text-sm text-ink">{addError}</p> : null}
-            </form>
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-sm text-muted tabular-nums">{active.length} included in the next search</p>
-              <button
-                type="button"
-                onClick={restoreBoards}
-                className="inline-flex min-h-11 items-center gap-2 text-sm font-medium text-accent"
-              >
-                <RotateCcw className="size-4" aria-hidden="true" />
-                Restore defaults
-              </button>
-            </div>
-            <ul className="max-h-80 overflow-auto rounded-sm border border-line">
-              {listed.map((board) => {
-                const key = companyKey(board);
-                const on = !disabled.has(key);
-                return (
-                  <li key={key} className="border-b border-line last:border-b-0">
-                    <div className="flex min-h-11 items-center gap-3 px-3">
-                      <label className="flex min-w-0 flex-1 items-center gap-3 py-2">
-                        <input
-                          type="checkbox"
-                          checked={on}
-                          onChange={() => toggleBoard(board)}
-                          className="size-4"
-                        />
-                        <span className="min-w-0">
-                          <span className="block truncate text-sm text-ink">{board.name}</span>
-                          <span className="block truncate text-xs text-muted">
-                            {sourceLabel(board.source)} · {board.slug}
-                            {board.builtin ? "" : " · added"}
-                          </span>
-                        </span>
-                      </label>
-                      {board.builtin ? null : (
-                        <button
-                          type="button"
-                          onClick={() => setBoards(boards.filter((item) => companyKey(item) !== key))}
-                          className="min-h-11 shrink-0 px-2 text-sm text-muted"
-                        >
-                          Remove
-                        </button>
-                      )}
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        ) : null}
-      </section>
+      <BoardsPanel
+        boards={boards}
+        listed={listed}
+        disabled={disabled}
+        activeCount={active.length}
+        open={boardsOpen}
+        onToggleOpen={() => setBoardsOpen((open) => !open)}
+        addName={addName}
+        addSource={addSource}
+        addSlug={addSlug}
+        addError={addError}
+        sourceHint={SOURCE_META.find((item) => item.id === addSource)?.hint ?? ""}
+        onAddName={setAddName}
+        onAddSource={setAddSource}
+        onAddSlug={setAddSlug}
+        onAdd={onAdd}
+        onToggleBoard={toggleBoard}
+        onRemove={(key) => setBoards((current) => (current ?? []).filter((item) => companyKey(item) !== key))}
+        onRestore={() => {
+          setBoards(baseRef.current.map((company) => ({ ...company, builtin: true })));
+          setDisabled(new Set());
+          setAddError("");
+        }}
+      />
 
       {phase !== "idle" ? (
-        <section className="flex flex-col gap-3" aria-live="polite">
-          {phase === "loading" ? (
-            checked === 0 ? (
-              <div className="relative h-1 overflow-hidden rounded-sm bg-line" role="progressbar">
-                <div className="boardline-scan absolute inset-y-0 w-1/3 bg-accent" />
-              </div>
-            ) : (
-              <div
-                className="h-1 overflow-hidden rounded-sm bg-line"
-                role="progressbar"
-                aria-valuemin={0}
-                aria-valuemax={total}
-                aria-valuenow={checked}
-              >
-                <div className="bl-bar h-full bg-accent" style={{ width: `${total ? (checked / total) * 100 : 0}%` }} />
-              </div>
-            )
-          ) : null}
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <p className="text-sm text-ink tabular-nums">
-              {phase === "loading"
-                ? `Checked ${checked} of ${total}`
-                : `${jobs.length} role${jobs.length === 1 ? "" : "s"}`}
-              {failed.length > 0 ? ` · ${failed.length} board${failed.length === 1 ? "" : "s"} missed` : ""}
-              {sorted.length > RESULT_CAP ? ` · showing ${RESULT_CAP}` : ""}
-            </p>
-            {failed.length > 0 ? (
-              <button
-                type="button"
-                onClick={() => setShowMisses((open) => !open)}
-                className="min-h-11 text-sm font-medium text-accent"
-              >
-                {showMisses ? "Hide missed boards" : "Show missed boards"}
-              </button>
-            ) : null}
-          </div>
-          {phase === "loading" && cursor ? <p className="text-sm text-muted">{cursor}</p> : null}
-          {notice ? <p className="text-sm text-muted">{notice}</p> : null}
-          {error ? <p className="text-sm text-ink">{error}</p> : null}
-          {showMisses ? (
-            <ul className="flex flex-col gap-1 text-sm text-muted">
-              {failed.map((board) => (
-                <li key={`${board.source}:${board.slug}`}>
-                  {board.name} · {sourceLabel(board.source)} · {board.slug}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-
-          {phase === "loading" && jobs.length === 0 ? (
-            <div className="flex flex-col gap-2" aria-hidden="true">
-              {Array.from({ length: 4 }, (_, index) => (
-                <div key={index} className="bl-skel h-14 rounded-md" />
-              ))}
-            </div>
-          ) : null}
-
-          {phase === "done" && jobs.length === 0 && !error ? (
-            <p className="rounded-lg border border-line bg-surface px-4 py-6 text-sm text-muted">
-              No titles on the selected boards include every word. Try a shorter title, or add a board.
-            </p>
-          ) : null}
-
-          {visible.length > 0 ? (
-            <>
-              <div className="flex gap-2 overflow-x-auto md:hidden">
-                {COLUMNS.map((column) => {
-                  const activeSort = sortKey === column.key;
-                  return (
-                    <button
-                      key={column.key}
-                      type="button"
-                      onClick={() => onSort(column.key)}
-                      className={`inline-flex min-h-11 shrink-0 items-center gap-1 rounded-full border px-4 text-sm ${
-                        activeSort ? "border-accent text-accent" : "border-line text-muted"
-                      }`}
-                    >
-                      {column.label}
-                      {activeSort ? (
-                        sortDir === 1 ? (
-                          <ArrowUp className="size-3.5" aria-hidden="true" />
-                        ) : (
-                          <ArrowDown className="size-3.5" aria-hidden="true" />
-                        )
-                      ) : null}
-                    </button>
-                  );
-                })}
-              </div>
-              <ul className="flex flex-col gap-2 md:hidden">
-                {(grouped ? groups.flatMap((group) => group.jobs) : visible).map((job, index) => (
-                  <li key={`${job.url}-${job.company}-${job.title}-${index}`}>
-                    <JobCard job={job} />
-                  </li>
-                ))}
-              </ul>
-              <div className="hidden overflow-hidden rounded-xl border border-line bg-surface md:block">
-                <table className="w-full border-collapse text-left text-sm">
-                  <caption className="sr-only">
-                    Matching roles sorted by {sortKey} {sortDir === 1 ? "ascending" : "descending"}
-                  </caption>
-                  <thead>
-                    <tr className="border-b border-line">
-                      {COLUMNS.map((column) => {
-                        const activeSort = sortKey === column.key;
-                        return (
-                          <th key={column.key} aria-sort={activeSort ? (sortDir === 1 ? "ascending" : "descending") : "none"} className="px-3 py-1 font-medium">
-                            <button
-                              type="button"
-                              onClick={() => onSort(column.key)}
-                              className="inline-flex min-h-11 items-center gap-1 text-muted"
-                            >
-                              {column.label}
-                              {activeSort ? (
-                                sortDir === 1 ? (
-                                  <ArrowUp className="size-3.5" aria-hidden="true" />
-                                ) : (
-                                  <ArrowDown className="size-3.5" aria-hidden="true" />
-                                )
-                              ) : null}
-                            </button>
-                          </th>
-                        );
-                      })}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {grouped
-                      ? groups.map((group) => (
-                          <GroupRows key={group.source} source={group.source} jobs={group.jobs} />
-                        ))
-                      : visible.map((job, index) => (
-                          <JobRow key={`${job.url}-${job.company}-${job.title}-${index}`} job={job} />
-                        ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          ) : null}
-        </section>
+        <SearchResults
+          phase={phase}
+          checked={checked}
+          total={total}
+          cursor={cursor}
+          notice={notice}
+          error={error}
+          jobs={jobs}
+          failed={failed}
+          filteredCount={filtered.length}
+          sortedCount={sorted.length}
+          filterActive={filters.modes.size > 0 || filters.countries.size > 0}
+          showMisses={showMisses}
+          onToggleMisses={() => setShowMisses((open) => !open)}
+          modeOptions={uniqueWorkModes(jobs)}
+          countryOptions={uniqueCountries(jobs)}
+          filters={filters}
+          onFilters={setFilters}
+          visible={visible}
+          grouped={grouped}
+          groups={groups}
+          sortKey={sortKey}
+          sortDir={sortDir}
+          onSort={onSort}
+        />
       ) : null}
     </main>
-  );
-}
-
-function JobCard({ job }: { job: Job }) {
-  const when = formatUpdated(job.updated);
-  return (
-    <article className="flex flex-col gap-1 rounded-lg border border-line bg-surface px-4 py-3">
-      <p className="text-xs text-muted">
-        {sourceLabel(job.source)} · {job.company}
-      </p>
-      <TitleLink job={job} />
-      <p className="text-sm text-muted">
-        {job.location || "Location not listed"}
-        {when ? ` · ${when}` : ""}
-      </p>
-    </article>
-  );
-}
-
-function GroupRows({ source, jobs }: { source: Source; jobs: Job[] }) {
-  return (
-    <>
-      <tr>
-        <td colSpan={5} className="bg-bg px-3 py-2 text-xs font-medium text-muted">
-          {sourceLabel(source)}
-          <span className="tabular-nums"> · {jobs.length}</span>
-        </td>
-      </tr>
-      {jobs.map((job, index) => (
-        <JobRow key={`${job.url}-${job.title}-${index}`} job={job} />
-      ))}
-    </>
-  );
-}
-
-function JobRow({ job }: { job: Job }) {
-  const when = formatUpdated(job.updated);
-  return (
-    <tr className="border-b border-line last:border-b-0">
-      <td className="px-3 py-3 text-muted">{sourceLabel(job.source)}</td>
-      <td className="px-3 py-3 text-ink">{job.company}</td>
-      <td className="px-3 py-3">
-        <TitleLink job={job} />
-      </td>
-      <td className="px-3 py-3 text-muted">{job.location || "—"}</td>
-      <td className="px-3 py-3 whitespace-nowrap text-muted tabular-nums">{when || "—"}</td>
-    </tr>
-  );
-}
-
-function TitleLink({ job }: { job: Job }) {
-  if (!job.url.startsWith("https://")) {
-    return <span className="text-ink">{job.title}</span>;
-  }
-  return (
-    <a
-      href={job.url}
-      target="_blank"
-      rel="noreferrer"
-      className="inline-flex items-start gap-1 text-ink underline decoration-line underline-offset-2"
-    >
-      <span>{job.title}</span>
-      <ExternalLink className="mt-0.5 size-3.5 shrink-0 text-muted" aria-hidden="true" />
-    </a>
   );
 }
