@@ -4,6 +4,46 @@ import { sourceLabel, type BoardFailure, type Job, type JobFilters, type SortKey
 import { COLUMNS, RESULT_CAP, type Phase } from "./search-shared";
 import { GroupRows, JobCard, JobRow } from "./job-views";
 
+function Pager({
+  page,
+  pageCount,
+  from,
+  to,
+  total,
+  onPage,
+}: {
+  page: number;
+  pageCount: number;
+  from: number;
+  to: number;
+  total: number;
+  onPage: (page: number) => void;
+}) {
+  return (
+    <nav className="flex flex-wrap items-center justify-between gap-2" aria-label="Results pages">
+      <button
+        type="button"
+        disabled={page <= 1}
+        onClick={() => onPage(Math.max(1, page - 1))}
+        className="min-h-11 rounded-sm border border-line px-4 text-sm text-ink disabled:opacity-40"
+      >
+        Previous
+      </button>
+      <p className="text-sm text-muted tabular-nums">
+        {from}–{to} of {total} · Page {page} of {pageCount}
+      </p>
+      <button
+        type="button"
+        disabled={page >= pageCount}
+        onClick={() => onPage(Math.min(pageCount, page + 1))}
+        className="min-h-11 rounded-sm bg-accent px-4 text-sm font-medium text-accent-fg disabled:bg-surface disabled:text-ink disabled:opacity-40 disabled:border disabled:border-line"
+      >
+        Next
+      </button>
+    </nav>
+  );
+}
+
 export function SearchResults({
   phase,
   checked,
@@ -65,6 +105,7 @@ export function SearchResults({
 }) {
   const from = sortedCount === 0 ? 0 : (page - 1) * pageSize + 1;
   const to = Math.min(page * pageSize, sortedCount);
+  const showPager = sortedCount > 0;
 
   return (
     <section className="flex flex-col gap-3" aria-live="polite">
@@ -94,7 +135,6 @@ export function SearchResults({
               : `${jobs.length} role${jobs.length === 1 ? "" : "s"}`}
           {failed.length > 0 ? ` · ${failed.length} board${failed.length === 1 ? "" : "s"} missed` : ""}
           {sortedCount > RESULT_CAP ? ` · capped at ${RESULT_CAP}` : ""}
-          {sortedCount > pageSize ? ` · ${from}–${to}` : ""}
         </p>
         {failed.length > 0 ? (
           <button type="button" onClick={onToggleMisses} className="min-h-11 text-sm font-medium text-accent">
@@ -142,6 +182,7 @@ export function SearchResults({
       ) : null}
       {visible.length > 0 ? (
         <>
+          {showPager ? <Pager page={page} pageCount={pageCount} from={from} to={to} total={sortedCount} onPage={onPage} /> : null}
           <div className="flex gap-2 overflow-x-auto md:hidden">
             {COLUMNS.map((column) => {
               const activeSort = sortKey === column.key;
@@ -216,29 +257,7 @@ export function SearchResults({
               </tbody>
             </table>
           </div>
-          {pageCount > 1 ? (
-            <nav className="flex flex-wrap items-center justify-between gap-2" aria-label="Results pages">
-              <button
-                type="button"
-                disabled={page <= 1}
-                onClick={() => onPage(page - 1)}
-                className="min-h-11 rounded-sm border border-line px-4 text-sm text-ink disabled:opacity-40"
-              >
-                Previous
-              </button>
-              <p className="text-sm text-muted tabular-nums">
-                Page {page} of {pageCount}
-              </p>
-              <button
-                type="button"
-                disabled={page >= pageCount}
-                onClick={() => onPage(page + 1)}
-                className="min-h-11 rounded-sm border border-line bg-accent px-4 text-sm font-medium text-accent-fg disabled:bg-surface disabled:text-ink disabled:opacity-40"
-              >
-                Next
-              </button>
-            </nav>
-          ) : null}
+          {showPager ? <Pager page={page} pageCount={pageCount} from={from} to={to} total={sortedCount} onPage={onPage} /> : null}
         </>
       ) : null}
     </section>
