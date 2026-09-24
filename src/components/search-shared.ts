@@ -3,7 +3,9 @@ import { parseCompanies, type Company, type Job, type SortKey, type Source } fro
 export const STORE_KEY = "boardline-boards-v1";
 export const CHUNK = 6;
 export const RESULT_CAP = 400;
-export const PAGE_SIZE = 10;
+export const PAGE_SIZES = [10, 25, 50, 100] as const;
+export const PAGE_SIZE = PAGE_SIZES[0];
+export type PageSize = (typeof PAGE_SIZES)[number];
 export const SUGGESTIONS = [
   "Director of Product Design",
   "Product Designer",
