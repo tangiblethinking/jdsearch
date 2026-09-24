@@ -35,6 +35,7 @@ import {
   loadStore,
   readableError,
   type Board,
+  type PageSize,
   type Phase,
 } from "./search-shared";
 
@@ -62,6 +63,7 @@ export function SearchApp({ query, onQuery }: { query: string; onQuery: (next: s
   const [sortDir, setSortDir] = useState<1 | -1>(1);
   const [filters, setFilters] = useState<JobFilters>(() => emptyFilters());
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<PageSize>(PAGE_SIZE);
   const baseRef = useRef<Company[]>([]);
   const runId = useRef(0);
   const booted = useRef(false);
@@ -199,6 +201,11 @@ export function SearchApp({ query, onQuery }: { query: string; onQuery: (next: s
     setFilters(next);
   }
 
+  function onPageSize(size: PageSize) {
+    setPageSize(size);
+    setPage(1);
+  }
+
   function toggleBoard(board: Board) {
     const key = companyKey(board);
     setDisabled((prev) => {
@@ -239,10 +246,10 @@ export function SearchApp({ query, onQuery }: { query: string; onQuery: (next: s
 
   const filtered = useMemo(() => filterJobs(jobs, filters), [jobs, filters]);
   const sorted = useMemo(() => sortJobs(filtered, sortKey, sortDir).slice(0, RESULT_CAP), [filtered, sortKey, sortDir]);
-  const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  const pageCount = Math.max(1, Math.ceil(sorted.length / pageSize));
   const safePage = Math.min(page, pageCount);
-  const start = (safePage - 1) * PAGE_SIZE;
-  const visible = sorted.slice(start, start + PAGE_SIZE);
+  const start = (safePage - 1) * pageSize;
+  const visible = sorted.slice(start, start + pageSize);
   const grouped = sortKey === "source";
   const groups = grouped ? groupJobs(visible) : [];
   const sourceOptions = useMemo(() => {
@@ -361,8 +368,9 @@ export function SearchApp({ query, onQuery }: { query: string; onQuery: (next: s
           onSort={onSort}
           page={safePage}
           pageCount={pageCount}
-          pageSize={PAGE_SIZE}
+          pageSize={pageSize}
           onPage={setPage}
+          onPageSize={onPageSize}
         />
       ) : null}
     </main>
