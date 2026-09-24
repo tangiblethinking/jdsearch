@@ -1,23 +1,27 @@
 import { ArrowDown, ArrowUp } from "lucide-react";
 import { FilterChips } from "@/components/filter-chips";
 import { sourceLabel, type BoardFailure, type Job, type JobFilters, type SortKey, type Source, type WorkMode } from "@/lib/jobs";
-import { COLUMNS, RESULT_CAP, type Phase } from "./search-shared";
+import { COLUMNS, PAGE_SIZES, RESULT_CAP, type PageSize, type Phase } from "./search-shared";
 import { GroupRows, JobCard, JobRow } from "./job-views";
 
 function Pager({
   page,
   pageCount,
+  pageSize,
   from,
   to,
   total,
   onPage,
+  onPageSize,
 }: {
   page: number;
   pageCount: number;
+  pageSize: number;
   from: number;
   to: number;
   total: number;
   onPage: (page: number) => void;
+  onPageSize: (size: PageSize) => void;
 }) {
   return (
     <nav className="flex flex-wrap items-center justify-between gap-2" aria-label="Results pages">
@@ -29,9 +33,25 @@ function Pager({
       >
         Previous
       </button>
-      <p className="text-sm text-muted tabular-nums">
-        {from}–{to} of {total} · Page {page} of {pageCount}
-      </p>
+      <div className="flex flex-wrap items-center gap-3">
+        <label className="flex items-center gap-2 text-sm text-muted">
+          Rows
+          <select
+            value={pageSize}
+            onChange={(event) => onPageSize(Number(event.target.value) as PageSize)}
+            className="min-h-11 rounded-sm border border-line bg-surface px-2 text-sm text-ink"
+          >
+            {PAGE_SIZES.map((size) => (
+              <option key={size} value={size}>
+                {size}
+              </option>
+            ))}
+          </select>
+        </label>
+        <p className="text-sm text-muted tabular-nums">
+          {from}–{to} of {total} · Page {page} of {pageCount}
+        </p>
+      </div>
       <button
         type="button"
         disabled={page >= pageCount}
@@ -73,6 +93,7 @@ export function SearchResults({
   pageCount,
   pageSize,
   onPage,
+  onPageSize,
 }: {
   phase: Phase;
   checked: number;
@@ -102,6 +123,7 @@ export function SearchResults({
   pageCount: number;
   pageSize: number;
   onPage: (page: number) => void;
+  onPageSize: (size: PageSize) => void;
 }) {
   const from = sortedCount === 0 ? 0 : (page - 1) * pageSize + 1;
   const to = Math.min(page * pageSize, sortedCount);
@@ -182,7 +204,18 @@ export function SearchResults({
       ) : null}
       {visible.length > 0 ? (
         <>
-          {showPager ? <Pager page={page} pageCount={pageCount} from={from} to={to} total={sortedCount} onPage={onPage} /> : null}
+          {showPager ? (
+            <Pager
+              page={page}
+              pageCount={pageCount}
+              pageSize={pageSize}
+              from={from}
+              to={to}
+              total={sortedCount}
+              onPage={onPage}
+              onPageSize={onPageSize}
+            />
+          ) : null}
           <div className="flex gap-2 overflow-x-auto md:hidden">
             {COLUMNS.map((column) => {
               const activeSort = sortKey === column.key;
@@ -257,7 +290,18 @@ export function SearchResults({
               </tbody>
             </table>
           </div>
-          {showPager ? <Pager page={page} pageCount={pageCount} from={from} to={to} total={sortedCount} onPage={onPage} /> : null}
+          {showPager ? (
+            <Pager
+              page={page}
+              pageCount={pageCount}
+              pageSize={pageSize}
+              from={from}
+              to={to}
+              total={sortedCount}
+              onPage={onPage}
+              onPageSize={onPageSize}
+            />
+          ) : null}
         </>
       ) : null}
     </section>
