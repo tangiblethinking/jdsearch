@@ -20,6 +20,7 @@ export function SearchResults({
   onToggleMisses,
   modeOptions,
   countryOptions,
+  sourceOptions,
   filters,
   onFilters,
   visible,
@@ -28,6 +29,10 @@ export function SearchResults({
   sortKey,
   sortDir,
   onSort,
+  page,
+  pageCount,
+  pageSize,
+  onPage,
 }: {
   phase: Phase;
   checked: number;
@@ -44,6 +49,7 @@ export function SearchResults({
   onToggleMisses: () => void;
   modeOptions: WorkMode[];
   countryOptions: string[];
+  sourceOptions: Source[];
   filters: JobFilters;
   onFilters: (next: JobFilters) => void;
   visible: Job[];
@@ -52,7 +58,14 @@ export function SearchResults({
   sortKey: SortKey;
   sortDir: 1 | -1;
   onSort: (key: SortKey) => void;
+  page: number;
+  pageCount: number;
+  pageSize: number;
+  onPage: (page: number) => void;
 }) {
+  const from = sortedCount === 0 ? 0 : (page - 1) * pageSize + 1;
+  const to = Math.min(page * pageSize, sortedCount);
+
   return (
     <section className="flex flex-col gap-3" aria-live="polite">
       {phase === "loading" ? (
@@ -80,7 +93,8 @@ export function SearchResults({
               ? `${filteredCount} of ${jobs.length} role${jobs.length === 1 ? "" : "s"}`
               : `${jobs.length} role${jobs.length === 1 ? "" : "s"}`}
           {failed.length > 0 ? ` · ${failed.length} board${failed.length === 1 ? "" : "s"} missed` : ""}
-          {sortedCount > RESULT_CAP ? ` · showing ${RESULT_CAP}` : ""}
+          {sortedCount > RESULT_CAP ? ` · capped at ${RESULT_CAP}` : ""}
+          {sortedCount > pageSize ? ` · ${from}–${to}` : ""}
         </p>
         {failed.length > 0 ? (
           <button type="button" onClick={onToggleMisses} className="min-h-11 text-sm font-medium text-accent">
@@ -113,11 +127,17 @@ export function SearchResults({
         </p>
       ) : null}
       {jobs.length > 0 ? (
-        <FilterChips modes={modeOptions} countries={countryOptions} filters={filters} onChange={onFilters} />
+        <FilterChips
+          modes={modeOptions}
+          countries={countryOptions}
+          sources={sourceOptions}
+          filters={filters}
+          onChange={onFilters}
+        />
       ) : null}
       {jobs.length > 0 && filteredCount === 0 ? (
         <p className="rounded-lg border border-line bg-surface px-4 py-6 text-sm text-muted">
-          No roles match these filters. Clear a chip or choose another country.
+          No roles match these filters. Clear a chip or choose another source.
         </p>
       ) : null}
       {visible.length > 0 ? (
@@ -196,6 +216,29 @@ export function SearchResults({
               </tbody>
             </table>
           </div>
+          {pageCount > 1 ? (
+            <nav className="flex flex-wrap items-center justify-between gap-2" aria-label="Results pages">
+              <button
+                type="button"
+                disabled={page <= 1}
+                onClick={() => onPage(page - 1)}
+                className="min-h-11 rounded-sm border border-line px-4 text-sm text-ink disabled:opacity-40"
+              >
+                Previous
+              </button>
+              <p className="text-sm text-muted tabular-nums">
+                Page {page} of {pageCount}
+              </p>
+              <button
+                type="button"
+                disabled={page >= pageCount}
+                onClick={() => onPage(page + 1)}
+                className="min-h-11 rounded-sm border border-line bg-accent px-4 text-sm font-medium text-accent-fg disabled:bg-surface disabled:text-ink disabled:opacity-40"
+              >
+                Next
+              </button>
+            </nav>
+          ) : null}
         </>
       ) : null}
     </section>

@@ -8,8 +8,10 @@ export {
   classifyLocation,
   emptyFilters,
   filterJobs,
+  filtersAreActive,
   toggleFilterValue,
   uniqueCountries,
+  uniqueSources,
   uniqueWorkModes,
 } from "./job-filters";
 export { normalize, normalizeRss } from "./jobs-normalize";

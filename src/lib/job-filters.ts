@@ -1,6 +1,6 @@
 export type WorkMode = "remote" | "hybrid" | "office" | "unknown";
 
-export type FilterableJob = { country: string; workMode: WorkMode };
+export type FilterableJob = { country: string; workMode: WorkMode; source?: string };
 
 export const WORK_MODES: WorkMode[] = ["remote", "hybrid", "office", "unknown"];
 
@@ -18,17 +18,23 @@ export type Classified = { country: string; workMode: WorkMode };
 export type JobFilters = {
   modes: ReadonlySet<WorkMode>;
   countries: ReadonlySet<string>;
+  sources: ReadonlySet<string>;
 };
 
 export function emptyFilters(): JobFilters {
-  return { modes: new Set(), countries: new Set() };
+  return { modes: new Set(), countries: new Set(), sources: new Set() };
+}
+
+export function filtersAreActive(filters: JobFilters): boolean {
+  return filters.modes.size > 0 || filters.countries.size > 0 || filters.sources.size > 0;
 }
 
 export function filterJobs<T extends FilterableJob>(jobs: T[], filters: JobFilters): T[] {
-  if (filters.modes.size === 0 && filters.countries.size === 0) return jobs;
+  if (!filtersAreActive(filters)) return jobs;
   return jobs.filter((job) => {
     if (filters.modes.size > 0 && !filters.modes.has(job.workMode)) return false;
     if (filters.countries.size > 0 && !filters.countries.has(job.country)) return false;
+    if (filters.sources.size > 0 && !filters.sources.has(job.source ?? "")) return false;
     return true;
   });
 }
@@ -42,6 +48,10 @@ export function uniqueCountries(jobs: FilterableJob[]): string[] {
 export function uniqueWorkModes(jobs: FilterableJob[]): WorkMode[] {
   const seen = new Set(jobs.map((job) => job.workMode));
   return WORK_MODES.filter((mode) => seen.has(mode));
+}
+
+export function uniqueSources(jobs: FilterableJob[]): string[] {
+  return [...new Set(jobs.map((job) => job.source).filter((source): source is string => Boolean(source)))];
 }
 
 export function toggleFilterValue<T>(set: ReadonlySet<T>, value: T): Set<T> {
