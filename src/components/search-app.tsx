@@ -3,14 +3,18 @@ import { Search } from "lucide-react";
 import { searchJobs } from "@/lib/jobs.functions";
 import {
   SOURCE_META,
+  SOURCES,
   companyKey,
   emptyFilters,
   filterJobs,
+  filtersAreActive,
+  isSource,
   normalizeSlug,
   parseCompanies,
   sortJobs,
   sourceRank,
   uniqueCountries,
+  uniqueSources,
   uniqueWorkModes,
   type BoardFailure,
   type Company,
@@ -23,6 +27,7 @@ import { BoardsPanel } from "./search-boards";
 import { SearchResults } from "./search-results";
 import {
   CHUNK,
+  PAGE_SIZE,
   RESULT_CAP,
   STORE_KEY,
   SUGGESTIONS,
@@ -56,6 +61,7 @@ export function SearchApp({ query, onQuery }: { query: string; onQuery: (next: s
   const [sortKey, setSortKey] = useState<SortKey>("source");
   const [sortDir, setSortDir] = useState<1 | -1>(1);
   const [filters, setFilters] = useState<JobFilters>(() => emptyFilters());
+  const [page, setPage] = useState(1);
   const baseRef = useRef<Company[]>([]);
   const runId = useRef(0);
   const booted = useRef(false);
@@ -135,6 +141,7 @@ export function SearchApp({ query, onQuery }: { query: string; onQuery: (next: s
     setSortKey("source");
     setSortDir(1);
     setFilters(emptyFilters());
+    setPage(1);
     onQuery(q);
 
     const acc: Job[] = [];
@@ -179,11 +186,17 @@ export function SearchApp({ query, onQuery }: { query: string; onQuery: (next: s
   }
 
   function onSort(key: SortKey) {
+    setPage(1);
     if (sortKey === key) setSortDir((dir) => (dir === 1 ? -1 : 1));
     else {
       setSortKey(key);
       setSortDir(1);
     }
+  }
+
+  function onFilters(next: JobFilters) {
+    setPage(1);
+    setFilters(next);
   }
 
   function toggleBoard(board: Board) {
@@ -225,10 +238,17 @@ export function SearchApp({ query, onQuery }: { query: string; onQuery: (next: s
   }
 
   const filtered = useMemo(() => filterJobs(jobs, filters), [jobs, filters]);
-  const sorted = useMemo(() => sortJobs(filtered, sortKey, sortDir), [filtered, sortKey, sortDir]);
-  const visible = sorted.slice(0, RESULT_CAP);
+  const sorted = useMemo(() => sortJobs(filtered, sortKey, sortDir).slice(0, RESULT_CAP), [filtered, sortKey, sortDir]);
+  const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  const safePage = Math.min(page, pageCount);
+  const start = (safePage - 1) * PAGE_SIZE;
+  const visible = sorted.slice(start, start + PAGE_SIZE);
   const grouped = sortKey === "source";
   const groups = grouped ? groupJobs(visible) : [];
+  const sourceOptions = useMemo(() => {
+    const seen = new Set(uniqueSources(jobs));
+    return SOURCES.filter((source) => seen.has(source));
+  }, [jobs]);
   const listed = [...(boards ?? [])].sort((a, b) => {
     const bySource = sourceRank(a.source) - sourceRank(b.source);
     return bySource !== 0 ? bySource : a.name.localeCompare(b.name);
@@ -325,19 +345,24 @@ export function SearchApp({ query, onQuery }: { query: string; onQuery: (next: s
           failed={failed}
           filteredCount={filtered.length}
           sortedCount={sorted.length}
-          filterActive={filters.modes.size > 0 || filters.countries.size > 0}
+          filterActive={filtersAreActive(filters)}
           showMisses={showMisses}
           onToggleMisses={() => setShowMisses((open) => !open)}
           modeOptions={uniqueWorkModes(jobs)}
           countryOptions={uniqueCountries(jobs)}
+          sourceOptions={sourceOptions.filter(isSource)}
           filters={filters}
-          onFilters={setFilters}
+          onFilters={onFilters}
           visible={visible}
           grouped={grouped}
           groups={groups}
           sortKey={sortKey}
           sortDir={sortDir}
           onSort={onSort}
+          page={safePage}
+          pageCount={pageCount}
+          pageSize={PAGE_SIZE}
+          onPage={setPage}
         />
       ) : null}
     </main>
